@@ -43,6 +43,11 @@ func main() {
 	fmt.Println(dependencies)
 }
 ```
+What that looks like:
+
+<img width="821" height="317" alt="image" src="https://github.com/user-attachments/assets/dbde7338-8304-4338-88bd-ac8d865b5bd4" />
+
+
 
 ## Contributions
 Always welcome 
