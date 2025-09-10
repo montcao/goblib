@@ -5,7 +5,7 @@
 </div>
 goblib is a safe binary dependency analysis toolkit in Go. It can be used in other Go programs to take in a binary and output the dependencies that the binary relies on, including the dependencies of its dependencies. In this way, a user can see full visibility of the binaries supply chain.
 
-goblib uses Go's built in debug/elf package to parse ELF headers, never executing the binary like ldd (which was the initial starting point).
+goblib uses Go's built in debug/elf package to parse ELF headers, so there's no chance of accidental binary execution like ldd (which was the initial starting point on how this project started....).
 
 ### Why is this needed?
 
@@ -22,12 +22,21 @@ TODO
 
 ## Usage
 
-goblib builds a tree from a given binary path. In the initial beta it has only been tested with `/bin/ls`.
+goblib builds a tree from a given binary path. In the initial beta it has only been tested with `/bin/ls`, `unzip`, `hashcat`, and `vim-tiny`.
 
 ### Example usage
 
-The `main()` example below takes in the `/bin/ls` as an argument, but you can pass it in the binary name however you wish. 
+The `main()` example below takes in a binary path as the argument.
+
 ```
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+)
+
 func main() {
 	flag.Parse()
 	if len(flag.Args()) < 1 {
@@ -37,10 +46,60 @@ func main() {
 
 	rootPath := flag.Args()[0]
 
-	tree := goblib.BuildTree(rootPath, EmptyTree())
-	goblib.PrintFullTree(tree, "", map[string]bool{})
-    dependencies, err = tree.GetUniqueDependencies()
-	fmt.Println(dependencies)
+	tree := BuildTree(rootPath, EmptyTree())
+
+	fmt.Println("\n**********PRINT TREE************\n")
+	PrintFullTree(tree, "", map[string]bool{})
+
+	fmt.Println("\n**********PRINT UNIQUE LIB DEPENDENCIES **************\n")
+	lib_dependencies, err := tree.GetUniqueDependencies()
+	if err != nil {
+		// do nothing
+	}
+	fmt.Println(lib_dependencies)
+
+	fmt.Println("\n**********GET NODES************\n")
+	nodes := tree.GetNodes()
+	fmt.Println(nodes)
+
+	fmt.Println("\n**********GET INDIVIDUAL NODES************\n")
+	for _, node := range nodes {
+		if node.Metadata != nil {
+			fmt.Printf("Path: %s\n", node.Path)
+			fmt.Printf("Architecture: %s\n", node.Metadata.Architecture)
+			fmt.Printf("DynamicLoader: %s\n", node.Metadata.DynamicLoader)
+			fmt.Printf("SharedLibraries: %v\n", node.Metadata.SharedLibraries)
+			fmt.Printf("RuntimeBinaries: %v\n", node.Metadata.RuntimeBinaries)
+			fmt.Printf("Package: %v\n", node.Metadata.Package)
+			fmt.Println()
+		}
+	}
+
+	fmt.Println("\n**********GET DYNAMIC LOADER LIBS************\n")
+	dls := tree.GetDynamicLoaders()
+	fmt.Println(dls)
+
+	fmt.Println("\n**********STATIC BINARY CHECK************\n")
+	bin_found, _ := StaticBinaryCheck(rootPath)
+	if bin_found != nil {
+		print(bin_found)
+	}
+	fmt.Println("\n*********************\n")
+	
+	df := DebianFinder{}
+	tree.UpdateMetaWithPackage(df)
+	fmt.Println("\n**********GET INDIVIDUAL NODES AFTER FINDING PACKAGES************\n")
+	for _, node := range nodes {
+		if node.Metadata != nil {
+			fmt.Printf("Path: %s\n", node.Path)
+			fmt.Printf("Architecture: %s\n", node.Metadata.Architecture)
+			fmt.Printf("DynamicLoader: %s\n", node.Metadata.DynamicLoader)
+			fmt.Printf("SharedLibraries: %v\n", node.Metadata.SharedLibraries)
+			fmt.Printf("RuntimeBinaries: %v\n", node.Metadata.RuntimeBinaries)
+			fmt.Printf("Package: %v\n", node.Metadata.Package)
+			fmt.Println()
+		}
+	}
 }
 ```
 What that looks like:
