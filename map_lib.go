@@ -1,20 +1,15 @@
 package goblib
 
 import (
-	"debug/elf"
+	"debug/elf" // https://pkg.go.dev/debug/elf#pkg-overview
 	"fmt"
 	"path/filepath"
 	"strings"
 	"os/exec"
+	"bytes"
 )
 
 var ldconfigLines []string 
-type Node struct {
-	Path string  `json:"path"`
-	Deps []*Node `json:"deps,omitempty"`
-}
-
-type Forest []*Node // multiple bin support TODO
 
 func init() {
 	cmd := exec.Command("ldconfig", "-p")
@@ -66,10 +61,18 @@ func BuildTree(bin_path string, visited map[string]*Node) *Node {
 		return node
 	}
 
+	// New, create BinaryMetadata to add
+	bm := &BinaryMetadata{
+		AbsPath: loc,
+	}
+
 	// if not, create a node from the path of the lib
-	node := &Node{Path: loc}
+	node := &Node{Path: loc, Metadata: bm}
 	// attach the node to the map
 	visited[loc] = node
+
+
+	// Break this up to handle dynamic loaders and interpreters too
 
 	f, err := elf.Open(loc)
 	// If we can't check the binary, return the node
@@ -79,16 +82,48 @@ func BuildTree(bin_path string, visited map[string]*Node) *Node {
 	}
 	defer f.Close() // release function when exit
 
-	// Get all the libs that the bin depends on
-	libs, err := f.ImportedLibraries()
-	if err != nil {
-		fmt.Println(err)
-		return node
+	// architecture
+	var arch string
+	switch f.Machine {
+	case elf.EM_X86_64:
+		arch = "x86-64"
+	case elf.EM_AARCH64:
+		arch = "ARM64"
+	default:
+		arch = fmt.Sprintf("unknown (%d)", f.Machine)
 	}
+	// Update metadata
+	node.Metadata.Architecture = arch
+
+
+	// Dynamic loader / interpreter
+	// Had to add this to handle cross platform binaries
+	var interp string
+	for _, prog := range f.Progs {
+		if prog.Type == elf.PT_INTERP {
+			data := make([]byte, prog.Filesz)
+			_, err := prog.ReadAt(data, 0)
+			if err != nil {
+				fmt.Errorf("Failed to read PT_INTERP: %v", err)
+			}
+			interp = string(bytes.Trim(data, "\x00"))
+			break
+		}
+	}
+	node.Metadata.DynamicLoader = interp
+
+	// Shared libraries
+	slibs, err :=  f.ImportedLibraries() 
+
+	if err != nil {
+		fmt.Printf("No shared libraries found or error: %v", err)
+	}
+	node.Metadata.SharedLibraries = slibs
+
+	// do we need ELF Type, f.Type later? revisit just in case
 
 	// This is the recursion part, so we can get all the dependencies of dependencies...
-	// Supply chain baby
-	for _, lib := range libs {
+	for _, lib := range slibs {
 		resolved, err := ResolveLib(lib)
 		if err != nil {
 			fmt.Println(err)
@@ -120,27 +155,71 @@ func PrintFullTree(node *Node, indent string, seen map[string]bool) {
 	}
 }
 
+func (node *Node) GetNodes() ([]*Node) {
+	nodes := []*Node{}
+    visited := make(map[string]struct{})
 
-func (node *Node) GetUniqueDependencies() ([]string, error) {
+    var collect func(n *Node)
+    collect = func(n *Node) {
+        if n == nil {
+            return
+        }
+        if _, exists := visited[n.Path]; exists {
+            return
+        }
+        visited[n.Path] = struct{}{}
+        nodes = append(nodes, n)
+        for _, dep := range n.Deps {
+            collect(dep)
+        }
+    }
+    collect(node)
+    return nodes
+}
+
+
+// Common recursive collect function for traversing the tree
+func collectNodes(node *Node, getKey func(*Node) string) map[string]struct{} {
 	// Make a new map of structs
 	// Efficient in Go because empty structs are zero bytes
-	unique := make(map[string]struct{}) 
-	// Declare a recursive helper function
-	var collect func(n *Node)
+    unique := make(map[string]struct{})
+    var collect func(n *Node)
+    collect = func(n *Node) {
+        if n == nil {
+            return
+        }
+        key := getKey(n)
+        if key == "" {
+            return
+        }
+        if _, exists := unique[key]; exists {
+            return
+        }
+        unique[key] = struct{}{}
+        for _, dep := range n.Deps {
+            collect(dep)
+        }
+    }
+    collect(node)
+    return unique
+}
 
-	collect = func(n *Node) {
-		if n == nil {
-			return
-		}
-		if _, exists := unique[n.Path]; exists {
-			return
-		}
-		unique[n.Path] = struct{}{} // populate the keys
-		for _, dep := range n.Deps {
-			collect(dep)
-		}
+// Returns all the DynamicLoaders found in the tree
+func (node *Node) GetDynamicLoaders() ([]string) {
+	unique := collectNodes(node, func(n *Node) string { return n.Metadata.DynamicLoader })
+	dynamic_loaders := make([]string, 0, len(unique)) // Create an empty array for the keys
+	for path := range unique {
+		dynamic_loaders = append(dynamic_loaders, path)
 	}
-	collect(node)
+	//fmt.Println(len(libs)) // Debug to check stability
+	return dynamic_loaders
+
+}
+
+// Returns all the shared libraries for a binary (that was passed in as the root)
+func (node *Node) GetUniqueDependencies() ([]string, error) {
+
+	unique := collectNodes(node, func(n *Node) string { return n.Path })
 	bin := node.Path
 	delete(unique, bin) // Remove the binary from the list of dependencies
 	//fmt.Println(bin)
@@ -152,5 +231,33 @@ func (node *Node) GetUniqueDependencies() ([]string, error) {
 	return libs, nil
 }
 
+// Provide the option to update all metadata with the package that the lib is in
+func (node *Node) UpdateMetaWithPackage(finder PackageFinder) {
+	visited := make(map[string]struct{})
+	node.updateMetaWithPackageHelper(finder, visited)
+}
 
+func (node *Node) updateMetaWithPackageHelper(finder PackageFinder, visited map[string]struct{}) {
+	if node == nil {
+		return
+	}
+	if _, ok := visited[node.Path]; ok {
+		return
+	}
+	visited[node.Path] = struct{}{}
 
+	pkg, err := finder.FindPackage(node.Path)
+	if err != nil {
+		fmt.Printf("Package  %s not found\n", node.Path)
+	} else {
+		parse_pkg := strings.Fields(pkg)
+		pkg = parse_pkg[0]
+		pkg = pkg[:len(pkg)-1]
+		//fmt.Println(pkg)
+		node.Metadata.Package = pkg
+	}
+	// walk the tree
+	for _, dep := range node.Deps {
+		dep.updateMetaWithPackageHelper(finder, visited)
+	}
+}

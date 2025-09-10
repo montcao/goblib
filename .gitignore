@@ -34,3 +34,6 @@ main.go
 Dev.Dockerfile
 .devcontainer.json
 .DS_Store
+# remove this later for users to test with provided binaries
+tests 
+*deb*
