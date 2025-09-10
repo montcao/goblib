@@ -104,7 +104,8 @@ func main() {
 ```
 What that looks like:
 
-<img width="821" height="317" alt="image" src="https://github.com/user-attachments/assets/dbde7338-8304-4338-88bd-ac8d865b5bd4" />
+<img width="582" height="450" alt="image" src="https://github.com/user-attachments/assets/4dc45bf6-7ad4-4d32-ba19-94dd4e7dbece" />
+
 
 
 
