@@ -1,15 +1,15 @@
-package github.com/montcao/goblib
+package goblib
 
 import (
+	"bytes"
 	"debug/elf" // https://pkg.go.dev/debug/elf#pkg-overview
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
-	"os/exec"
-	"bytes"
 )
 
-var ldconfigLines []string 
+var ldconfigLines []string
 
 func init() {
 	cmd := exec.Command("ldconfig", "-p")
@@ -40,7 +40,7 @@ func ResolveLib(name string) (string, error) {
 	return "", fmt.Errorf("could not resolve %s", name)
 }
 
-func EmptyTree()(map[string]*Node){
+func EmptyTree() map[string]*Node {
 	return make(map[string]*Node)
 }
 
@@ -71,7 +71,6 @@ func BuildTree(bin_path string, visited map[string]*Node) *Node {
 	// attach the node to the map
 	visited[loc] = node
 
-
 	// Break this up to handle dynamic loaders and interpreters too
 
 	f, err := elf.Open(loc)
@@ -95,7 +94,6 @@ func BuildTree(bin_path string, visited map[string]*Node) *Node {
 	// Update metadata
 	node.Metadata.Architecture = arch
 
-
 	// Dynamic loader / interpreter
 	// Had to add this to handle cross platform binaries
 	var interp string
@@ -113,7 +111,7 @@ func BuildTree(bin_path string, visited map[string]*Node) *Node {
 	node.Metadata.DynamicLoader = interp
 
 	// Shared libraries
-	slibs, err :=  f.ImportedLibraries() 
+	slibs, err := f.ImportedLibraries()
 
 	if err != nil {
 		fmt.Printf("No shared libraries found or error: %v", err)
@@ -155,57 +153,56 @@ func PrintFullTree(node *Node, indent string, seen map[string]bool) {
 	}
 }
 
-func (node *Node) GetNodes() ([]*Node) {
+func (node *Node) GetNodes() []*Node {
 	nodes := []*Node{}
-    visited := make(map[string]struct{})
+	visited := make(map[string]struct{})
 
-    var collect func(n *Node)
-    collect = func(n *Node) {
-        if n == nil {
-            return
-        }
-        if _, exists := visited[n.Path]; exists {
-            return
-        }
-        visited[n.Path] = struct{}{}
-        nodes = append(nodes, n)
-        for _, dep := range n.Deps {
-            collect(dep)
-        }
-    }
-    collect(node)
-    return nodes
+	var collect func(n *Node)
+	collect = func(n *Node) {
+		if n == nil {
+			return
+		}
+		if _, exists := visited[n.Path]; exists {
+			return
+		}
+		visited[n.Path] = struct{}{}
+		nodes = append(nodes, n)
+		for _, dep := range n.Deps {
+			collect(dep)
+		}
+	}
+	collect(node)
+	return nodes
 }
-
 
 // Common recursive collect function for traversing the tree
 func collectNodes(node *Node, getKey func(*Node) string) map[string]struct{} {
 	// Make a new map of structs
 	// Efficient in Go because empty structs are zero bytes
-    unique := make(map[string]struct{})
-    var collect func(n *Node)
-    collect = func(n *Node) {
-        if n == nil {
-            return
-        }
-        key := getKey(n)
-        if key == "" {
-            return
-        }
-        if _, exists := unique[key]; exists {
-            return
-        }
-        unique[key] = struct{}{}
-        for _, dep := range n.Deps {
-            collect(dep)
-        }
-    }
-    collect(node)
-    return unique
+	unique := make(map[string]struct{})
+	var collect func(n *Node)
+	collect = func(n *Node) {
+		if n == nil {
+			return
+		}
+		key := getKey(n)
+		if key == "" {
+			return
+		}
+		if _, exists := unique[key]; exists {
+			return
+		}
+		unique[key] = struct{}{}
+		for _, dep := range n.Deps {
+			collect(dep)
+		}
+	}
+	collect(node)
+	return unique
 }
 
 // Returns all the DynamicLoaders found in the tree
-func (node *Node) GetDynamicLoaders() ([]string) {
+func (node *Node) GetDynamicLoaders() []string {
 	unique := collectNodes(node, func(n *Node) string { return n.Metadata.DynamicLoader })
 	dynamic_loaders := make([]string, 0, len(unique)) // Create an empty array for the keys
 	for path := range unique {

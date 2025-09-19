@@ -1,8 +1,8 @@
-package github.com/montcao/goblib
+package goblib
 
 import (
-	"os/exec"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 

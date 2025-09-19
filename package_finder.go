@@ -1,16 +1,15 @@
-package github.com/montcao/goblib
+package goblib
 
 import (
-	"os/exec"
-	"strings"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 type PackageFinder interface {
 	FindPackage(lib string) (string, error)
 }
-
 
 type DebianFinder struct{}
 
