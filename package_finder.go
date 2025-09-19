@@ -1,4 +1,4 @@
-package goblib
+package github.com/montcao/goblib
 
 import (
 	"os/exec"

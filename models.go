@@ -1,4 +1,4 @@
-package goblib
+package github.com/montcao/goblib
 
 // Model for Tree Node objects, this is the graph
 type Node struct {

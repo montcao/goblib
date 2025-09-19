@@ -1,4 +1,4 @@
-package goblib
+package github.com/montcao/goblib
 
 import (
 	"debug/elf" // https://pkg.go.dev/debug/elf#pkg-overview
