@@ -1,5 +1,7 @@
 # goblib (beta)
-goblib is a safe binary dependency analysis toolkit in Go. It can be used in other Go programs to take in a binary and output the dependencies that the binary relies on, including the dependencies of its dependencies. In this way, a user can see full visibility of the binaries supply chain.
+goblib is a safe binary dependency analysis toolkit in Go. 
+
+It can be used in other Go programs to take in a binary and output the dependencies that the binary relies on, including the dependencies of its dependencies. In this way, a user can see full visibility of the binaries supply chain.
 
 goblib uses Go's built in debug/elf package to parse ELF headers, so there's no chance of accidental binary execution like ldd (which was the initial starting point on how this project started....).
 
